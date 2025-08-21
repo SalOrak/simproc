@@ -1,23 +1,34 @@
 const std = @import("std");
 
 const Cpu = struct {
-    const Self = @This();
     // Frequency. How many cycles per second executes.
     clock: u64,
     // Number of cores available to run tasks.
     n_cores: u8, 
-
-    pub fn simulate(self: *const Self, task: Task) f64 {
-
-        const n_ins: f64 = @floatFromInt(task.n_ins);
-        const ins_per_sec: f64 = @floatFromInt(self.clock * self.n_cores);
-
-        return n_ins / ins_per_sec;
-    }
 };
 
+pub fn simulate(cpu: Cpu , tasks: []Task) f64 {
+
+    const n_ins: f64 = blk: {
+        var total: u64 = 0;
+        for (tasks) |task| { total += task.n_ins;}
+        break :blk @as(f64, @floatFromInt(total));
+    };
+    
+    
+    var time: f64 = 0.0;
+    while (true) {
+
+    }
+
+    // const n_ins: f64 = @floatFromInt(task.n_ins);
+    const ins_per_sec: f64 = @floatFromInt(cpu.clock * cpu.n_cores);
+
+    return n_ins / ins_per_sec;
+}
+
 const Task = struct {
-    // Number of instructions required per task.
+    // Number of atomic instructions required per task.
     n_ins: u64,
 };
 
@@ -31,6 +42,16 @@ pub fn main() !void {
         .n_ins = 300,
     };
 
-    std.debug.print("Result {d}\n", .{cpu.simulate(t)});
+    const t2 : Task = Task {
+        .n_ins = 3000,
+    };
+
+    var tasks = [_]Task{ 
+        t,
+        t2,
+    };
+
+
+    std.debug.print("Result {d}\n", .{simulate(cpu, &tasks)});
 
 }
