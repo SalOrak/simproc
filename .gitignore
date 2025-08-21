@@ -1,1 +1,9 @@
-zig-out/*
+zig-out/
+.zig-cache/
+
+/release/
+/debug/
+/build/
+/bulid-*/
+/docgen_tmp/
+
