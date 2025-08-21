@@ -7,24 +7,47 @@ const Cpu = struct {
     n_cores: u8, 
 };
 
+pub fn min(a: std.ArrayList) u16 {
+    var minimum: f64 = a[0]; 
+    var i: u16 = undefined; 
+    for (0..a) |j| {
+        if (minimum > a[j]){
+            i = j;
+            minimum = a[j];
+        }
+    } 
+    return i;
+} 
+
 pub fn simulate(cpu: Cpu , tasks: []Task) f64 {
-
-    const n_ins: f64 = blk: {
-        var total: u64 = 0;
-        for (tasks) |task| { total += task.n_ins;}
-        break :blk @as(f64, @floatFromInt(total));
-    };
+    // const n_ins: f64 = blk: {
+    //     var total: u64 = 0;
+    //     for (tasks) |task| { total += task.n_ins;}
+    //     break :blk @as(f64, @floatFromInt(total));
+    // };
+    //
+    const allocator = std.heap.page_allocator; 
+    const total_time: f64 = 0.0;
+    var cores = std.ArrayList(f64).init(allocator);
+    var times_per_tasks = std.ArrayList(f64).init(allocator);
     
+    for (tasks) |task| {
+        times_per_tasks.append(@as(f64, @floatFromInt(task.n_ins) / @floatFromInt(cpu.clock)));
+    }
     
-    var time: f64 = 0.0;
-    while (true) {
-
+    const items = @min(times_per_tasks.len, cpu.n_cores);
+    for (0..items) |i| {
+        cores.append(times_per_task[i]);
     }
 
-    // const n_ins: f64 = @floatFromInt(task.n_ins);
-    const ins_per_sec: f64 = @floatFromInt(cpu.clock * cpu.n_cores);
+    while(min < times_per_tasks.len) {
+        const min_index = min(times_per_tasks);
+        total_time += times_per_tasks[min_index];
+        items += 1;
+        times_per_tasks[min_index] = times_per_tasks[min_index];
+    }
 
-    return n_ins / ins_per_sec;
+    return total_time; 
 }
 
 const Task = struct {
