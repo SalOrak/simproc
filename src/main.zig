@@ -58,13 +58,13 @@ pub fn simulate(cpu: Cpu , tasks: []Task) !f64 {
 
     for (tasks) |task| {
         const nins: f64 = @as(f64, @floatFromInt(task.n_ins));
-        try times_per_tasks.append(nins/clock);
+        try times_per_tasks.insert(0, nins/clock);
     }
     
     // spots as in free spaces to fill them with tasks
     const spots = @min(times_per_tasks.items.len, cpu.n_cores);
     for (0..spots) |_| {
-        const task_time = times_per_tasks.orderedRemove(0);
+        const task_time = times_per_tasks.pop() orelse break;
         try cores.append(task_time);
     }
     
@@ -75,10 +75,8 @@ pub fn simulate(cpu: Cpu , tasks: []Task) !f64 {
         total_time += time; 
         counter += 1;
         substractToArrayList(&cores, time); 
-        if (times_per_tasks.items.len != 0){
-            const next_item_opt = times_per_tasks.orderedRemove(0);
-            try cores.append(next_item_opt);
-        }
+        const next_item_opt = times_per_tasks.pop() orelse continue;
+        try cores.append(next_item_opt);
     }
 
     return total_time; 
@@ -107,9 +105,9 @@ pub fn main() !void {
     var tasks = comptime [_]Task{ 
         make_task(300),
         make_task(200),
-        make_task(200),
-        make_task(200),
         make_task(3000),
+        make_task(200),
+        make_task(200),
     };
 
     std.debug.print("Result {!d}\n", .{simulate(cpu, &tasks)});
