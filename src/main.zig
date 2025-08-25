@@ -29,7 +29,6 @@ test {
     try array.append(3.0);
      
     const result = min(array);
-    std.debug.print("{d}\n", .{result});
     try expect(result == 1); 
 }
 
@@ -64,24 +63,22 @@ pub fn simulate(cpu: Cpu , tasks: []Task) !f64 {
     
     // spots as in free spaces to fill them with tasks
     const spots = @min(times_per_tasks.items.len, cpu.n_cores);
-    std.debug.print("{d}\n", .{spots});
     for (0..spots) |_| {
-        const task_time = times_per_tasks.pop() orelse unreachable;
+        const task_time = times_per_tasks.orderedRemove(0);
         try cores.append(task_time);
     }
-
-    std.debug.print("{any}\n", .{cores});
     
     var counter: u16 = 0;
     while(counter < tasks.len) {
-        std.debug.print("Iteration: {any}\n", .{cores.items}); const smaller_task_index = min(cores);
-        std.debug.print("{}\n", .{cores.items[smaller_task_index]});
+        const smaller_task_index = min(cores);
         const time = cores.swapRemove(smaller_task_index);
         total_time += time; 
-        substractToArrayList(&cores, time); 
         counter += 1;
-        const next_item_opt = times_per_tasks.pop() orelse continue;
-        try cores.append(next_item_opt);
+        substractToArrayList(&cores, time); 
+        if (times_per_tasks.items.len != 0){
+            const next_item_opt = times_per_tasks.orderedRemove(0);
+            try cores.append(next_item_opt);
+        }
     }
 
     return total_time; 
@@ -92,31 +89,28 @@ const Task = struct {
     n_ins: u64,
 };
 
+
+
+fn make_task(n_ins: u64) Task{
+    return Task {
+        .n_ins = n_ins,
+    };
+}
+
+
 pub fn main() !void {
     const cpu: Cpu = Cpu {
         .n_cores = 2,
         .clock = 300,
     };
 
-    const t : Task = Task {
-        .n_ins = 300,
+    var tasks = comptime [_]Task{ 
+        make_task(300),
+        make_task(200),
+        make_task(200),
+        make_task(200),
+        make_task(3000),
     };
-
-    const t2 : Task = Task {
-        .n_ins = 3000,
-    };
-
-    const t3: Task = Task {
-        .n_ins = 3000,
-    };
-    
-    var tasks = [_]Task{ 
-        t,
-        t2,
-        t3,
-    };
-
 
     std.debug.print("Result {!d}\n", .{simulate(cpu, &tasks)});
-
 }
