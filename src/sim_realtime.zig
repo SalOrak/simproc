@@ -38,13 +38,9 @@ pub fn substractToArrayList(array: *std.ArrayList(f64), x: f64) void {
     } 
 }
 
-pub fn simulate(cpu: Cpu , tasks: []Task) !f64 {
-    // const n_ins: f64 = blk: {
-    //     var total: u64 = 0;
-    //     for (tasks) |task| { total += task.n_ins;}
-    //     break :blk @as(f64, @floatFromInt(total));
-    // };
-    //
+//duration is in ms
+pub fn simulate(cpu: Cpu, duration: u16) !f64 {
+    
     const allocator = std.heap.page_allocator; 
     var total_time: f64 = 0.0;
     var cores = std.ArrayList(f64).init(allocator);
