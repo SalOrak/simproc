@@ -49,7 +49,8 @@ pub fn simulate(cpu: Cpu, duration: u16) !f64 {
         cores.deinit();
         times_per_tasks.deinit();
     } 
-
+    
+    //1. generate all the tasks
     const clock: f64 = @as(f64, @floatFromInt(cpu.clock));
 
     for (tasks) |task| {
@@ -91,6 +92,54 @@ fn make_task(n_ins: u64) Task{
     };
 }
 
+const RealtimeTask = struct {
+    // Number of atomic instructions required per task.
+    n_ins: u64,
+    arrival_time: u64,
+};
+
+const State = enum {generate, nothing};
+
+fn generateWorkloadWithinTimeframe(comptime duration: u64, allocator: std.mem.Allocator) !std.ArrayList(Task) {
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const rand = prng.random();
+    
+    var tasks = std.ArrayList(RealtimeTask).init(allocator);
+
+    var prev_state = State.nothing;
+    var actual_state = State.nothing;
+
+    comptime var i = 0;
+    inline while (i < duration) : (i += 1) {
+        if (prev_state == State.nothing) {
+            const p = rand.float(f32);
+            // workload starts
+            if (p < 0.8) {
+                actual_state = State.generate; 
+            }
+        } else {
+            const p = rand.float(f32);
+            if (p >= 0.9) {
+                // workload stops
+                actual_state = State.nothing;
+            }
+        }
+
+        if (actual_state == State.generate) {
+            const ops = rand.intRangeAtMost(@FieldType(Task, "n_ins"), 300, 800);
+            try tasks.append(RealtimeTask{.n_ins = ops, .arrival_time = i});
+        }
+
+        prev_state = actual_state;
+    }
+
+    return tasks; 
+} 
+
 fn generateWorkload(comptime total_tasks: u16) ![total_tasks]Task {
 
     var prng = std.Random.DefaultPrng.init(blk: {
@@ -103,7 +152,6 @@ fn generateWorkload(comptime total_tasks: u16) ![total_tasks]Task {
     var tasks:  [total_tasks]Task = undefined;
     comptime var i = 0;
     inline while (i < total_tasks) : (i += 1) {
-        // const ops = 100; 
         const ops = rand.intRangeAtMost(@FieldType(Task, "n_ins"), 300, 800);
         tasks[i] = make_task(ops);
     }
@@ -125,8 +173,13 @@ pub fn main() !void {
     //     make_task(200),
     // };
     //
+    
+    const allocator = std.heap.page_allocator;
 
-    var tasks = try generateWorkload(8);
+    //var tasks = try generateWorkload(8);
+    var tasks = try generateWorkloadWithinTimeframe(10000, allocator);
+    defer tasks.deinit();
+
     std.debug.print("{any}\n", .{tasks}) ;
     std.debug.print("Result {!d}\n", .{simulate(cpu, &tasks)});
 }
