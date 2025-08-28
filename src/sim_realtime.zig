@@ -39,68 +39,125 @@ pub fn substractToArrayList(array: *std.ArrayList(f64), x: f64) void {
 }
 
 //duration is in ms
-pub fn simulate(cpu: Cpu, duration: u16) !f64 {
-    
+pub fn simulate(cpu: Cpu, duration: f64, workload: std.ArrayList(RealtimeTask)) !f64 {
     const allocator = std.heap.page_allocator; 
-    var total_time: f64 = 0.0;
+    var elapsed_time: f64 = 0.0;
+
     var cores = std.ArrayList(f64).init(allocator);
-    var times_per_tasks = std.ArrayList(f64).init(allocator);
+
     defer {
         cores.deinit();
-        times_per_tasks.deinit();
     } 
     
-    //1. generate all the tasks
     const clock: f64 = @as(f64, @floatFromInt(cpu.clock));
 
-    for (tasks) |task| {
-        const nins: f64 = @as(f64, @floatFromInt(task.n_ins));
-        try times_per_tasks.insert(0, nins/clock);
-    }
-    
-    // spots as in free spaces to fill them with tasks
-    const spots = @min(times_per_tasks.items.len, cpu.n_cores);
-    for (0..spots) |_| {
-        const task_time = times_per_tasks.pop() orelse break;
-        try cores.append(task_time);
-    }
-    
-    var counter: u16 = 0;
-    while(counter < tasks.len) {
+    var now: f64 = 0;
+    var n_cpu_tasks: @FieldType(Cpu, "n_cores") = 0;
+
+    // Between idx and idx_last_processed_task are the tasks available to be processed by the CPU.
+    var idx : u32 = 0; // Last available tasks representation in workload list index
+    var idx_last_processed_task: u32 = 0; // Last processed tasks (executed in cpu) index
+
+    while(now <= duration) {
+        // find first non-available task
+        while (true) {
+            const task = workload.items[idx];
+            if (task.arrival_time < now ) {
+                idx += 1;
+            } else {
+                break;
+            }
+        }
+
+        if (idx == idx_last_processed_task) {
+            idx += 1;
+            idx = @min(idx, workload.items.len - 1);
+            now += workload.items[idx].arrival_time;
+            continue;
+        }
+
+        if (n_cpu_tasks != cpu.n_cores) {
+            const free_spots = cpu.n_cores - n_cpu_tasks; // how many cores are free
+            const num_available_tasks = idx - idx_last_processed_task; //how many tasks are enqueued
+            const tasks_into_cpu = @min(free_spots, num_available_tasks);
+            
+            for (0..tasks_into_cpu + 1) |i| {
+                const current_task = workload.items[idx_last_processed_task + i];
+                const nins: f64 = @as(f64, @floatFromInt(current_task.n_ins));
+                const task_duration: f64 = nins/clock;
+                try cores.append(task_duration);
+            }
+            idx_last_processed_task += tasks_into_cpu;
+            n_cpu_tasks += tasks_into_cpu;
+        }
+
+        if (n_cpu_tasks == 0) {continue;}
+        
         const smaller_task_index = min(cores);
         const time = cores.swapRemove(smaller_task_index);
-        total_time += time; 
-        counter += 1;
-        substractToArrayList(&cores, time); 
-        const next_item_opt = times_per_tasks.pop() orelse continue;
-        try cores.append(next_item_opt);
+        elapsed_time += time; 
+        now += time;
+        substractToArrayList(&cores, time);
+        n_cpu_tasks -= 1;
     }
 
-    return total_time; 
+
+    return elapsed_time; 
 }
 
-const Task = struct {
-    // Number of atomic instructions required per task.
-    n_ins: u64,
-};
-
-
-
-fn make_task(n_ins: u64) Task{
-    return Task {
-        .n_ins = n_ins,
+test {
+    
+    const cpu: Cpu = Cpu {
+        .n_cores = 2,
+        .clock = 300,
     };
+    
+    {
+        var tasks = std.ArrayList(RealtimeTask).init(talloc);  
+        defer tasks.deinit();
+
+        try tasks.append(RealtimeTask{.n_ins = 300, .arrival_time = 1});
+        try tasks.append(RealtimeTask{.n_ins = 300, .arrival_time = 1});
+
+        const result = try simulate(cpu, 5, tasks);
+        const expected_result = 1;
+        std.debug.print("Result {}\n", .{result});
+        try expect(result == expected_result);
+    }
+
+    {
+        var tasks = std.ArrayList(RealtimeTask).init(talloc);  
+        defer tasks.deinit();
+        try tasks.append(RealtimeTask{.n_ins = 300, .arrival_time = 1});
+        try tasks.append(RealtimeTask{.n_ins = 600, .arrival_time = 1});
+
+        const result = try simulate(cpu, 5, tasks);
+        const expected_result = 2;
+        std.debug.print("Result {}\n", .{result});
+        try expect(result == expected_result);
+    }
+    {
+        var tasks = std.ArrayList(RealtimeTask).init(talloc);  
+        defer tasks.deinit();
+        try tasks.append(RealtimeTask{.n_ins = 300, .arrival_time = 1});
+        try tasks.append(RealtimeTask{.n_ins = 600, .arrival_time = 2});
+
+        const result = try simulate(cpu, 5, tasks);
+        const expected_result = 3;
+        std.debug.print("Result {}\n", .{result});
+        try expect(result == expected_result);
+    }
 }
 
 const RealtimeTask = struct {
     // Number of atomic instructions required per task.
     n_ins: u64,
-    arrival_time: u64,
+    arrival_time: f64,
 };
 
 const State = enum {generate, nothing};
 
-fn generateWorkloadWithinTimeframe(comptime duration: u64, allocator: std.mem.Allocator) !std.ArrayList(Task) {
+fn generateWorkloadWithinTimeframe(comptime duration: f64, allocator: std.mem.Allocator) !std.ArrayList(RealtimeTask) {
     var prng = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
@@ -113,8 +170,8 @@ fn generateWorkloadWithinTimeframe(comptime duration: u64, allocator: std.mem.Al
     var prev_state = State.nothing;
     var actual_state = State.nothing;
 
-    comptime var i = 0;
-    inline while (i < duration) : (i += 1) {
+    var i: f64 = 1;
+    while (i < duration) : (i += 1) {
         if (prev_state == State.nothing) {
             const p = rand.float(f32);
             // workload starts
@@ -128,9 +185,9 @@ fn generateWorkloadWithinTimeframe(comptime duration: u64, allocator: std.mem.Al
                 actual_state = State.nothing;
             }
         }
-
+     
         if (actual_state == State.generate) {
-            const ops = rand.intRangeAtMost(@FieldType(Task, "n_ins"), 300, 800);
+            const ops = rand.intRangeAtMost(@FieldType(RealtimeTask, "n_ins"), 100, 1000);
             try tasks.append(RealtimeTask{.n_ins = ops, .arrival_time = i});
         }
 
@@ -140,46 +197,20 @@ fn generateWorkloadWithinTimeframe(comptime duration: u64, allocator: std.mem.Al
     return tasks; 
 } 
 
-fn generateWorkload(comptime total_tasks: u16) ![total_tasks]Task {
-
-    var prng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
-    const rand = prng.random();
-    
-    var tasks:  [total_tasks]Task = undefined;
-    comptime var i = 0;
-    inline while (i < total_tasks) : (i += 1) {
-        const ops = rand.intRangeAtMost(@FieldType(Task, "n_ins"), 300, 800);
-        tasks[i] = make_task(ops);
-    }
-    
-    return tasks;
-}
-
 pub fn main() !void {
     const cpu: Cpu = Cpu {
         .n_cores = 2,
         .clock = 300,
     };
-    // idea: generate sequences of random tasks
-    // var tasks = comptime [_]Task{ 
-    //     make_task(300),
-    //     make_task(200),
-    //     make_task(3000),
-    //     make_task(200),
-    //     make_task(200),
-    // };
-    //
     
     const allocator = std.heap.page_allocator;
-
+    const duration = 5;
     //var tasks = try generateWorkload(8);
-    var tasks = try generateWorkloadWithinTimeframe(10000, allocator);
+    var tasks = try generateWorkloadWithinTimeframe(duration, allocator);
     defer tasks.deinit();
 
-    std.debug.print("{any}\n", .{tasks}) ;
-    std.debug.print("Result {!d}\n", .{simulate(cpu, &tasks)});
+    std.debug.print("Duration {}\n", .{duration});
+    std.debug.print("Tasks {any}\n", .{tasks});
+
+    std.debug.print("Result {!d}\n", .{simulate(cpu, duration, tasks)});
 }
